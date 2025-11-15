@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express from "express";
+import express, { type Request } from "express";
 import multer from "multer";
 import { readFile } from "fs/promises";
 import { SuiClient, getFullnodeUrl } from "@mysten/sui/client";
@@ -9,6 +9,10 @@ import { WalrusClient } from "@mysten/walrus";
 import { SealClient, SessionKey, EncryptedObject } from "@mysten/seal";
 import { fromHex, toHex } from "@mysten/sui/utils";
 import { Transaction } from "@mysten/sui/transactions";
+
+type UploadRequest = Request & {
+  files?: Express.Multer.File[] | { [fieldname: string]: Express.Multer.File[] };
+};
 
 const app = express();
 app.use(express.json());
@@ -48,7 +52,13 @@ async function buildTx(id: string) {
 
 app.post("/upload", upload.any(), async (req, res) => {
   try {
-    const file = req.files?.[0];
+    const uploadReq = req as UploadRequest;
+    const normalizedFiles = Array.isArray(uploadReq.files)
+      ? uploadReq.files
+      : uploadReq.files
+        ? Object.values(uploadReq.files).flat()
+        : [];
+    const file = normalizedFiles[0];
     if (!file) return res.status(400).json({ error: "No file uploaded" });
 
     const data = file.buffer;
@@ -75,7 +85,8 @@ app.post("/upload", upload.any(), async (req, res) => {
       sealId: EncryptedObject.parse(encryptedObject).id,
     });
   } catch (e) {
-    return res.status(500).json({ error: e.toString() });
+    const message = e instanceof Error ? e.message : String(e);
+    return res.status(500).json({ error: message });
   }
 });
 
@@ -112,7 +123,8 @@ app.get("/download/:blobId", async (req, res) => {
 
     res.send(new TextDecoder().decode(decrypted));
   } catch (e) {
-    res.status(500).json({ error: e.toString() });
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: message });
   }
 });
 
